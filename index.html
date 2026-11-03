@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IoT Cloud Control Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- MQTT.js Library -->
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                        },
+                        darkBg: '#0f172a',
+                        cardBg: '#1e293b',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Orbitron:wght@700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .font-digital {
+            font-family: 'Orbitron', monospace;
+        }
+        /* Custom Glowing effects */
+        .glow-green {
+            box-shadow: 0 0 25px rgba(34, 197, 94, 0.4);
+        }
+        .glow-red {
+            box-shadow: 0 0 25px rgba(239, 68, 68, 0.4);
+        }
+        .glow-blue {
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.3);
+        }
+        /* LED Indicator light */
+        .led-off {
+            background-color: #334155;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.6);
+        }
+        .led-on-red {
+            background-color: #ef4444;
+            box-shadow: 0 0 8px #ef4444, inset 0 1px 2px rgba(255,255,255,0.6);
+        }
+        .led-on-green {
+            background-color: #22c55e;
+            box-shadow: 0 0 8px #22c55e, inset 0 1px 2px rgba(255,255,255,0.6);
+        }
+        .led-on-amber {
+            background-color: #f59e0b;
+            box-shadow: 0 0 8px #f59e0b, inset 0 1px 2px rgba(255,255,255,0.6);
+        }
+        /* Custom Scrollbar for logs */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between selection:bg-brand-500 selection:text-white">
+
+    <!-- Header Navigation -->
+    <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur-md sticky top-0 z-50">
+        <div class="max-w-md mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-2.5">
+                <div class="p-2 bg-brand-600/20 text-brand-500 rounded-xl border border-brand-500/30">
+                    <i class="fa-solid fa-soap text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-base leading-tight text-white">
+                        SXY-2300 Controller
+                    </h1>
+                    <p class="text-[10px] text-slate-400">Washing Machine Universal Board</p>
+                </div>
+            </div>
+
+            <!-- Mobile Compact Status Badge -->
+            <div class="flex items-center space-x-2 bg-slate-800/90 border border-slate-700/60 rounded-full px-3 py-1">
+                <span id="statusIndicator" class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                <span id="statusText" class="text-xs font-medium text-slate-300">Connecting</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area (Mobile Container Optimized) -->
+    <main class="max-w-md mx-auto px-4 py-4 w-full flex-grow space-y-4">
+
+        <!-- SXY-2300 Replica Control Panel Card -->
+        <div class="bg-slate-900 border-2 border-slate-700 rounded-2xl p-4 shadow-2xl relative overflow-hidden bg-gradient-to-b from-slate-800/50 to-slate-900">
+            
+            <!-- Panel Header Banner -->
+            <div class="flex justify-between items-center pb-3 border-b border-slate-700/80 mb-4">
+                <div class="flex items-center space-x-2">
+                    <span class="bg-red-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded tracking-tighter">SXY</span>
+                    <span class="font-bold text-xs text-slate-200 tracking-wider">SXY-2300 PCB</span>
+                </div>
+                <div class="text-[10px] font-mono text-cyan-400 bg-cyan-950/80 px-2 py-0.5 border border-cyan-800/50 rounded flex items-center space-x-1">
+                    <span id="digitalDisplay" class="font-digital text-sm text-cyan-300">--</span>
+                    <span class="text-[9px] text-cyan-500">MIN</span>
+                </div>
+            </div>
+
+            <!-- Main Control Grid Layout matching Physical Board SXY-2300 -->
+            <div class="grid grid-cols-4 gap-2 mb-4">
+
+                <!-- Column 1: WATER LEVEL -->
+                <div class="flex flex-col items-center justify-between bg-slate-950/60 p-2 rounded-xl border border-slate-800">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mb-2 text-center">WATER</div>
+                    
+                    <div class="space-y-2 w-full px-1">
+                        <div class="flex items-center justify-between text-[10px]">
+                            <span class="text-slate-400 text-[9px]">HIGH</span>
+                            <span id="led-high" class="w-2.5 h-2.5 rounded-full led-off"></span>
+                        </div>
+                        <div class="flex items-center justify-between text-[10px]">
+                            <span class="text-slate-400 text-[9px]">MIDDLE</span>
+                            <span id="led-middle" class="w-2.5 h-2.5 rounded-full led-off"></span>
+                        </div>
+                        <div class="flex items-center justify-between text-[10px]">
+                            <span class="text-slate-400 text-[9px]">LOW</span>
+                            <span id="led-low" class="w-2.5 h-2.5 rounded-full led-off"></span>
+                        </div>
+                        <div class="flex items-center justify-between text-[10px]">
+                            <span class="text-slate-400 text-[9px]">SMALL</span>
+                            <span id="led-small" class="w-2.5 h-2.5 rounded-full led-on-red"></span>
+                        </div>
+                    </div>
+
+                    <!-- Water Level Button -->
+                    <button onclick="cycleWaterLevel()" class="mt-3 w-10 h-10 rounded-full bg-slate-800 hover:bg-slate-700 active:scale-95 border-2 border-cyan-500/50 flex items-center justify-center text-cyan-400 shadow-md touch-manipulation">
+                        <i class="fa-solid fa-glass-water text-sm"></i>
+                    </button>
+                    <span class="text-[9px] font-bold text-cyan-400 mt-1">WATER</span>
+                </div>
+
+                <!-- Column 2: PROCESS -->
+                <div class="flex flex-col items-center justify-between bg-slate-950/60 p-2 rounded-xl border border-slate-800">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mb-2 text-center">PROCESS</div>
+                    
+                    <div class="space-y-2 w-full px-1">
+                        <div class="flex items-center justify-between text-[10px]">
+                            <span class="text-slate-400 text-[9px]">SOAK</span>
+                            <span id="led-soak" class="w-2.5 h-2.5 rounded-full led-off"></span>
+                        </div>
+                        <div class="flex items-center justify-between text-[10px]">
+                            <span class="text-slate-400 text-[9px]">WASH</span>
+                            <span id="led-wash" class="w-2.5 h-2.5 rounded-full led-on-red"></span>
+                        </div>
+                        <div class="flex items-center justify-between text-[10px]">
+                            <span class="text-slate-400 text-[9px]">RINSE</span>
+                            <span id="led-rinse" class="w-2.5 h-2.5 rounded-full led-on-red"></span>
+                        </div>
+                        <div class="flex items-center justify-between text-[10px]">
+                            <span class="text-slate-400 text-[9px]">SPIN</span>
+                            <span id="led-spin" class="w-2.5 h-2.5 rounded-full led-on-red"></span>
+                        </div>
+                    </div>
+
+                    <!-- Process Button -->
+                    <button onclick="cycleProcess()" class="mt-3 w-10 h-10 rounded-full bg-slate-800 hover:bg-slate-700 active:scale-95 border-2 border-emerald-500/50 flex items-center justify-center text-emerald-400 shadow-md touch-manipulation">
+                        <i class="fa-solid fa-forward text-sm"></i>
+                    </button>
+                    <span class="text-[9px] font-bold text-emerald-400 mt-1">PROCESS</span>
+                </div>
+
+                <!-- Column 3: PROGRAM -->
+                <div class="flex flex-col items-center justify-between bg-slate-950/60 p-2 rounded-xl border border-slate-800">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mb-2 text-center">PROGRAM</div>
+                    
+                    <div class="space-y-2 w-full px-1">
+                        <div class="flex items-center justify-between text-[10px]">
+                            <span class="text-slate-400 text-[9px]">STANDARD</span>
+                            <span id="led-standard" class="w-2.5 h-2.5 rounded-full led-on-red"></span>
+                        </div>
+                        <div class="flex items-center justify-between text-[10px]">
+                            <span class="text-slate-400 text-[9px]">STRONG</span>
+                            <span id="led-strong" class="w-2.5 h-2.5 rounded-full led-off"></span>
+                        </div>
+                        <div class="flex items-center justify-between text-[10px]">
+                            <span class="text-slate-400 text-[9px]">FAST</span>
+                            <span id="led-fast" class="w-2.5 h-2.5 rounded-full led-off"></span>
+                        </div>
+                        <div class="flex items-center justify-between text-[10px]">
+                            <span class="text-slate-400 text-[9px]">SOFT</span>
+                            <span id="led-soft" class="w-2.5 h-2.5 rounded-full led-off"></span>
+                        </div>
+                    </div>
+
+                    <!-- Program Button -->
+                    <button onclick="cycleProgram()" class="mt-3 w-10 h-10 rounded-full bg-slate-800 hover:bg-slate-700 active:scale-95 border-2 border-amber-500/50 flex items-center justify-center text-amber-400 shadow-md touch-manipulation">
+                        <i class="fa-solid fa-shirt text-sm"></i>
+                    </button>
+                    <span class="text-[9px] font-bold text-amber-400 mt-1">PROGRAM</span>
+                </div>
+
+                <!-- Column 4: POWER & START -->
+                <div class="flex flex-col items-center justify-between bg-slate-950/60 p-2 rounded-xl border border-slate-800">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mb-2 text-center">ACTION</div>
+                    
+                    <div class="flex flex-col items-center justify-around h-full space-y-3 py-1">
+                        <!-- ON/OFF Button -->
+                        <div class="flex flex-col items-center">
+                            <button id="btnOnOff" onclick="togglePower()" class="w-11 h-11 rounded-full bg-slate-800 border-2 border-rose-500 text-rose-500 hover:bg-rose-500/20 active:scale-95 flex items-center justify-center shadow-lg touch-manipulation">
+                                <i class="fa-solid fa-power-off text-base"></i>
+                            </button>
+                            <span class="text-[9px] font-bold text-rose-400 mt-1">ON/OFF</span>
+                        </div>
+
+                        <!-- START / HOLD Button -->
+                        <div class="flex flex-col items-center">
+                            <button id="btnStartHold" onclick="toggleStartHold()" class="w-11 h-11 rounded-full bg-slate-800 border-2 border-emerald-500 text-emerald-500 hover:bg-emerald-500/20 active:scale-95 flex items-center justify-center shadow-lg touch-manipulation">
+                                <i id="iconStartHold" class="fa-solid fa-pause text-base"></i>
+                            </button>
+                            <span class="text-[9px] font-bold text-emerald-400 mt-1">START/HOLD</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Bottom Quick Command Bar -->
+            <div class="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
+                <button onclick="sendCommand('POWER=1')" class="py-2 px-3 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center justify-center space-x-1.5">
+                    <i class="fa-solid fa-bolt"></i>
+                    <span>POWER ON (1)</span>
+                </button>
+                <button onclick="sendCommand('POWER=0')" class="py-2 px-3 rounded-lg bg-rose-600/20 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center justify-center space-x-1.5">
+                    <i class="fa-solid fa-power-off"></i>
+                    <span>POWER OFF (0)</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Collapsible Settings & Logs Toggle -->
+        <div class="grid grid-cols-2 gap-2">
+            <button onclick="toggleSection('settingsBox')" class="py-2.5 px-3 bg-slate-900 border border-slate-800 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center space-x-1.5 active:bg-slate-800">
+                <i class="fa-solid fa-gear text-brand-400"></i>
+                <span>Settings</span>
+            </button>
+            <button onclick="toggleSection('consoleBox')" class="py-2.5 px-3 bg-slate-900 border border-slate-800 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center space-x-1.5 active:bg-slate-800">
+                <i class="fa-solid fa-terminal text-emerald-400"></i>
+                <span>Live Logs</span>
+            </button>
+        </div>
+
+        <!-- Broker Settings (Collapsible) -->
+        <div id="settingsBox" class="bg-slate-900 border border-slate-800 rounded-2xl p-4 hidden">
+            <h2 class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3">Cloud Config</h2>
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-[11px] font-medium text-slate-400 mb-1">MQTT WebSocket Broker</label>
+                    <input type="text" id="brokerUrl" value="wss://broker.hivemq.com:8884/mqtt" 
+                        class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                </div>
+                <div>
+                    <label class="block text-[11px] font-medium text-slate-400 mb-1">Topic</label>
+                    <input type="text" id="mqttTopic" value="washing_machine/control" 
+                        class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                </div>
+                <button onclick="reconnectMQTT()" class="w-full py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-medium transition-all flex items-center justify-center space-x-1.5">
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                    <span>Reconnect</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Console Log (Collapsible / Default Visible) -->
+        <div id="consoleBox" class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col">
+            <div class="flex justify-between items-center mb-2">
+                <span class="text-xs font-bold text-slate-300 uppercase tracking-wider">Live Log</span>
+                <button onclick="clearLogs()" class="text-[10px] text-slate-400 hover:text-slate-200">Clear</button>
+            </div>
+            <div id="logContainer" class="bg-slate-950 border border-slate-800/80 rounded-xl p-3 font-mono text-[11px] overflow-y-auto space-y-1.5 h-32">
+                <div class="text-slate-500 italic">Connecting to Cloud...</div>
+            </div>
+            <div class="mt-2 flex justify-between text-[10px] text-slate-400">
+                <span>Sent: <strong id="sentCount" class="text-brand-400">0</strong></span>
+                <span>Recv: <strong id="receivedCount" class="text-emerald-400">0</strong></span>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="py-3 text-center text-[10px] text-slate-600">
+        SXY-2300 Board Controller &bull; MQTT Connected
+    </footer>
+
+    <!-- Application Script -->
+    <script>
+        let client = null;
+        let isPowerOn = false;
+        let isRunning = false;
+        let waterLevel = 0; // 0=SMALL, 1=LOW, 2=MIDDLE, 3=HIGH
+        let processState = 0; // 0=ALL, 1=WASH, 2=RINSE, 3=SPIN
+        let programState = 0; // 0=STANDARD, 1=STRONG, 2=FAST, 3=SOFT
+
+        let sentCount = 0;
+        let receivedCount = 0;
+
+        // Initialize connection on load
+        window.addEventListener('DOMContentLoaded', () => {
+            initMQTT();
+            updateUI();
+        });
+
+        function initMQTT() {
+            const brokerUrl = document.getElementById('brokerUrl').value.trim();
+            const topic = document.getElementById('mqttTopic').value.trim();
+
+            updateStatus('connecting');
+            addLog('system', `Connecting to broker: ${brokerUrl}`);
+
+            const clientId = 'sxy2300_' + Math.random().toString(16).substr(2, 8);
+
+            try {
+                if (client) {
+                    client.end();
+                }
+
+                client = mqtt.connect(brokerUrl, {
+                    clientId: clientId,
+                    clean: true,
+                    connectTimeout: 5000,
+                    reconnectPeriod: 3000
+                });
+
+                client.on('connect', () => {
+                    updateStatus('connected');
+                    addLog('system', `Connected successfully as [${clientId}]`);
+                    
+                    client.subscribe(topic, (err) => {
+                        if (!err) {
+                            addLog('system', `Subscribed to topic: [${topic}]`);
+                        } else {
+                            addLog('error', `Failed to subscribe: ${err.message}`);
+                        }
+                    });
+                });
+
+                client.on('message', (receivedTopic, message) => {
+                    const payload = message.toString();
+                    receivedCount++;
+                    document.getElementById('receivedCount').innerText = receivedCount;
+                    addLog('received', `[${receivedTopic}]: ${payload}`);
+
+                    if (payload === 'POWER=1' || payload === '1') {
+                        isPowerOn = true;
+                        updateUI();
+                    } else if (payload === 'POWER=0' || payload === '0') {
+                        isPowerOn = false;
+                        isRunning = false;
+                        updateUI();
+                    }
+                });
+
+                client.on('error', (err) => {
+                    updateStatus('disconnected');
+                    addLog('error', `MQTT Error: ${err.message}`);
+                });
+
+                client.on('offline', () => {
+                    updateStatus('disconnected');
+                    addLog('system', 'MQTT Client went offline');
+                });
+
+            } catch (err) {
+                updateStatus('disconnected');
+                addLog('error', `Connection failed: ${err.message}`);
+            }
+        }
+
+        function togglePower() {
+            isPowerOn = !isPowerOn;
+            if (!isPowerOn) {
+                isRunning = false;
+            }
+            updateUI();
+            sendCommand(isPowerOn ? 'POWER=1' : 'POWER=0');
+        }
+
+        function toggleStartHold() {
+            if (!isPowerOn) return;
+            isRunning = !isRunning;
+            updateUI();
+            sendCommand(isRunning ? 'START' : 'HOLD');
+        }
+
+        function cycleWaterLevel() {
+            if (!isPowerOn) return;
+            waterLevel = (waterLevel + 1) % 4;
+            updateUI();
+            const levels = ['SMALL', 'LOW', 'MIDDLE', 'HIGH'];
+            sendCommand(`WATER=${levels[waterLevel]}`);
+        }
+
+        function cycleProcess() {
+            if (!isPowerOn) return;
+            processState = (processState + 1) % 4;
+            updateUI();
+            const processes = ['WASH_RINSE_SPIN', 'WASH', 'RINSE', 'SPIN'];
+            sendCommand(`PROCESS=${processes[processState]}`);
+        }
+
+        function cycleProgram() {
+            if (!isPowerOn) return;
+            programState = (programState + 1) % 4;
+            updateUI();
+            const programs = ['STANDARD', 'STRONG', 'FAST', 'SOFT'];
+            sendCommand(`PROGRAM=${programs[programState]}`);
+        }
+
+        function updateUI() {
+            const digitalDisplay = document.getElementById('digitalDisplay');
+            const btnOnOff = document.getElementById('btnOnOff');
+            const btnStartHold = document.getElementById('btnStartHold');
+            const iconStartHold = document.getElementById('iconStartHold');
+
+            // Power State UI
+            if (isPowerOn) {
+                btnOnOff.className = "w-11 h-11 rounded-full bg-rose-500 text-white border-2 border-rose-400 hover:bg-rose-600 active:scale-95 flex items-center justify-center shadow-lg glow-red touch-manipulation";
+                digitalDisplay.innerText = isRunning ? "38" : "00";
+            } else {
+                btnOnOff.className = "w-11 h-11 rounded-full bg-slate-800 border-2 border-rose-500 text-rose-500 hover:bg-rose-500/20 active:scale-95 flex items-center justify-center shadow-lg touch-manipulation";
+                digitalDisplay.innerText = "--";
+            }
+
+            // Start/Hold UI
+            if (isRunning) {
+                iconStartHold.className = "fa-solid fa-pause text-base";
+                btnStartHold.className = "w-11 h-11 rounded-full bg-emerald-500 text-white border-2 border-emerald-400 hover:bg-emerald-600 active:scale-95 flex items-center justify-center shadow-lg glow-green touch-manipulation";
+            } else {
+                iconStartHold.className = "fa-solid fa-play text-base";
+                btnStartHold.className = "w-11 h-11 rounded-full bg-slate-800 border-2 border-emerald-500 text-emerald-500 hover:bg-emerald-500/20 active:scale-95 flex items-center justify-center shadow-lg touch-manipulation";
+            }
+
+            // Water Level LEDs
+            document.getElementById('led-small').className = (isPowerOn && waterLevel === 0) ? "w-2.5 h-2.5 rounded-full led-on-red" : "w-2.5 h-2.5 rounded-full led-off";
+            document.getElementById('led-low').className = (isPowerOn && waterLevel === 1) ? "w-2.5 h-2.5 rounded-full led-on-red" : "w-2.5 h-2.5 rounded-full led-off";
+            document.getElementById('led-middle').className = (isPowerOn && waterLevel === 2) ? "w-2.5 h-2.5 rounded-full led-on-red" : "w-2.5 h-2.5 rounded-full led-off";
+            document.getElementById('led-high').className = (isPowerOn && waterLevel === 3) ? "w-2.5 h-2.5 rounded-full led-on-red" : "w-2.5 h-2.5 rounded-full led-off";
+
+            // Process LEDs
+            document.getElementById('led-soak').className = (isPowerOn && processState === 0) ? "w-2.5 h-2.5 rounded-full led-on-red" : "w-2.5 h-2.5 rounded-full led-off";
+            document.getElementById('led-wash').className = (isPowerOn && (processState === 0 || processState === 1)) ? "w-2.5 h-2.5 rounded-full led-on-red" : "w-2.5 h-2.5 rounded-full led-off";
+            document.getElementById('led-rinse').className = (isPowerOn && (processState === 0 || processState === 2)) ? "w-2.5 h-2.5 rounded-full led-on-red" : "w-2.5 h-2.5 rounded-full led-off";
+            document.getElementById('led-spin').className = (isPowerOn && (processState === 0 || processState === 3)) ? "w-2.5 h-2.5 rounded-full led-on-red" : "w-2.5 h-2.5 rounded-full led-off";
+
+            // Program LEDs
+            document.getElementById('led-standard').className = (isPowerOn && programState === 0) ? "w-2.5 h-2.5 rounded-full led-on-red" : "w-2.5 h-2.5 rounded-full led-off";
+            document.getElementById('led-strong').className = (isPowerOn && programState === 1) ? "w-2.5 h-2.5 rounded-full led-on-red" : "w-2.5 h-2.5 rounded-full led-off";
+            document.getElementById('led-fast').className = (isPowerOn && programState === 2) ? "w-2.5 h-2.5 rounded-full led-on-red" : "w-2.5 h-2.5 rounded-full led-off";
+            document.getElementById('led-soft').className = (isPowerOn && programState === 3) ? "w-2.5 h-2.5 rounded-full led-on-red" : "w-2.5 h-2.5 rounded-full led-off";
+        }
+
+        function toggleSection(id) {
+            const el = document.getElementById(id);
+            if (el.classList.contains('hidden')) {
+                el.classList.remove('hidden');
+            } else {
+                el.classList.add('hidden');
+            }
+        }
+
+        function reconnectMQTT() {
+            addLog('system', 'Reconnecting to MQTT broker...');
+            initMQTT();
+        }
+
+        function sendCommand(val) {
+            if (!client || !client.connected) {
+                addLog('error', 'Cannot send command: Broker not connected.');
+                return;
+            }
+
+            const topic = document.getElementById('mqttTopic').value.trim();
+            client.publish(topic, val, { qos: 0, retain: false }, (err) => {
+                if (!err) {
+                    sentCount++;
+                    document.getElementById('sentCount').innerText = sentCount;
+                    addLog('sent', `Published to [${topic}]: ${val}`);
+                } else {
+                    addLog('error', `Failed to publish: ${err.message}`);
+                }
+            });
+        }
+
+        function updateStatus(status) {
+            const indicator = document.getElementById('statusIndicator');
+            const text = document.getElementById('statusText');
+
+            if (status === 'connected') {
+                indicator.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(34,197,94,0.8)]";
+                text.innerText = "Connected";
+                text.className = "text-xs font-medium text-emerald-400";
+            } else if (status === 'connecting') {
+                indicator.className = "w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse";
+                text.innerText = "Connecting...";
+                text.className = "text-xs font-medium text-amber-400";
+            } else {
+                indicator.className = "w-2.5 h-2.5 rounded-full bg-rose-500";
+                text.innerText = "Disconnected";
+                text.className = "text-xs font-medium text-rose-400";
+            }
+        }
+
+        function addLog(type, message) {
+            const container = document.getElementById('logContainer');
+            const time = new Date().toLocaleTimeString();
+            const logItem = document.createElement('div');
+            logItem.className = "flex items-start space-x-2 leading-relaxed";
+
+            let typeBadge = '';
+            if (type === 'sent') {
+                typeBadge = '<span class="text-brand-400 font-bold">[SENT]</span>';
+            } else if (type === 'received') {
+                typeBadge = '<span class="text-emerald-400 font-bold">[RECV]</span>';
+            } else if (type === 'error') {
+                typeBadge = '<span class="text-rose-400 font-bold">[ERR]</span>';
+            } else {
+                typeBadge = '<span class="text-slate-400 font-bold">[SYS]</span>';
+            }
+
+            logItem.innerHTML = `
+                <span class="text-slate-500 shrink-0">${time}</span>
+                <span class="shrink-0">${typeBadge}</span>
+                <span class="text-slate-300 break-all">${escapeHtml(message)}</span>
+            `;
+
+            container.appendChild(logItem);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function clearLogs() {
+            document.getElementById('logContainer').innerHTML = '<div class="text-slate-500 italic">Logs cleared.</div>';
+        }
+
+        function escapeHtml(text) {
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+    </script>
+</body>
+</html>
